@@ -14,6 +14,7 @@ import { PGLiteEngine } from '../../src/core/pglite-engine.ts';
 import { resetPgliteState } from '../helpers/reset-pglite.ts';
 import { MinionQueue } from '../../src/core/minions/queue.ts';
 import { buildBrainTools } from '../../src/core/minions/tools/brain-allowlist.ts';
+import { privateDreamTools } from '../../src/core/minions/tools/private-dream.ts';
 import { importFromContent } from '../../src/core/import-file.ts';
 import type { MinionJobContext, SubagentHandlerData } from '../../src/core/minions/types.ts';
 import type { GBrainConfig } from '../../src/core/config.ts';
@@ -134,6 +135,19 @@ const VALID_RESPONSE = JSON.stringify({
   ],
   skipped: false,
   skip_reason: null,
+});
+
+test('private dream tool guard persists private pages before readback', async () => {
+  const context = await makeCtx(DATA);
+  const args = makeArgs(context, DATA, VALID_RESPONSE);
+  args.putPageTool = privateDreamTools([args.putPageTool!], true)[0];
+  const outcome = await runSubagentOneshot(args);
+  expect(outcome.kind).toBe('done');
+  for (const slug of [GOOD_SLUG_A, GOOD_SLUG_B]) {
+    const page = await engine.getPage(slug, { sourceId: 'default' });
+    expect(page?.frontmatter.visibility).toBe('private');
+    expect(page?.frontmatter.confidentiality).toBe('private');
+  }
 });
 
 describe('parseOneshotResponse', () => {

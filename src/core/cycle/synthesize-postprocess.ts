@@ -3,12 +3,13 @@ import type { BrainEngine } from '../engine.ts';
 import { throwIfAborted } from '../abort-check.ts';
 import { parseMarkdown, serializePageToMarkdown } from '../markdown.ts';
 import type { Action } from '../agent-output.ts';
-import { opError } from '../ops/contract.ts';
+import { opError, OperationError } from '../ops/contract.ts';
 import { ItemRun } from '../item-failure.ts';
 import { readFix } from '../ops/op-fix.ts';
 import { publicationHold } from '../persistence/accepted-pending.ts';
 import { isWriteCapacityWait, outstandingCapacityOf } from '../persistence/admission-retry.ts';
-import { authorizeStoredRequest } from '../persistence/authority.ts';
+import { authorizeStoredRequest, authorizeWrite } from '../persistence/authority.ts';
+import { authorizePageVisibility } from '../persistence/page-visibility.ts';
 import { digest } from '../persistence/digest.ts';
 import { getWriteRequest } from '../persistence/journal.ts';
 import { parseWriteRequestId } from '../persistence/preconditions.ts';
@@ -158,6 +159,18 @@ function carriedTranscript(p: PendingOutput, byPath: Map<string, DiscoveredTrans
   catch { return null; }
 }
 
+export async function authorizeMaintenanceOutput(
+  engine: BrainEngine, authority: MaintenanceAuthority, request: WriteRequest,
+): Promise<void> {
+  if (authority.writer.remote || request.source_id !== authority.writer.sourceId
+      || request.source_incarnation !== authority.writer.sourceIncarnation) {
+    throw new OperationError('permission_denied', 'Private output review requires its local maintenance owner.');
+  }
+  await authorizeWrite(engine, request.authority, request.operation, request.slug);
+  await authorizeWrite(engine, authority.writer, 'submit_job', request.slug);
+  await authorizePageVisibility(engine, authority.writer, request.slug);
+}
+
 export async function postprocessManagedSynthesis(
   engine: BrainEngine,
   authority: MaintenanceAuthority,
@@ -296,7 +309,7 @@ export async function postprocessManagedSynthesis(
         return;
       }
     }
-    await authorizeStoredRequest(engine, output.request);
+    await authorizeMaintenanceOutput(engine, authority, output.request);
     let content: string;
     if (prior) {
       if (prior.intent?.kind !== 'managed_maintenance_page' || prior.intent.expected_revision !== base || typeof prior.intent.content !== 'string') {

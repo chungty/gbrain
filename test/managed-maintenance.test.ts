@@ -7,6 +7,7 @@ import type { BrainEngine } from '../src/core/engine.ts';
 import { PGLiteEngine } from '../src/core/pglite-engine.ts';
 import { runPhaseConsolidate } from '../src/core/cycle/phases/consolidate.ts';
 import { runPhaseSynthesize } from '../src/core/cycle/synthesize.ts';
+import { authorizeMaintenanceOutput } from '../src/core/cycle/synthesize-postprocess.ts';
 import { runPhasePatterns } from '../src/core/cycle/patterns.ts';
 import { runCycle } from '../src/core/cycle.ts';
 import { maintenancePreflight, publishMaintenancePage, prepareMaintenanceMutation } from '../src/core/persistence/prepared-maintenance.ts';
@@ -442,6 +443,7 @@ test('managed synthesis drives real children and publishes repaired provenance p
     const quote = 'we charge for durability because reliable memories should survive every tool';
     writeFileSync(transcript, `User: ${quote}.\n${'Assistant: Discuss the long term roadmap.\n'.repeat(15)}`);
     await engine.setConfig('dream.synthesize.enabled', 'true');
+    await engine.setConfig('dream.synthesize.private_outputs', 'true');
     await engine.setConfig('dream.synthesize.cooldown_hours', '0');
     await engine.setConfig('dream.synthesize.min_chars', '100');
     await engine.setConfig('dream.synthesize.link_manifest', 'false');
@@ -485,9 +487,11 @@ test('managed synthesis drives real children and publishes repaired provenance p
         const slug = (result.details.written_slugs as string[])[0];
         const page = (await engine.readPageSnapshot(slug, { sourceId }))!;
         expect(page.page.frontmatter.dream_generated).toBe(true);
+        expect(page.page.frontmatter.visibility).toBe('private');
         expect(page.page.compiled_truth).not.toContain('"an entirely invented');
         expect(parseMarkdown(readFileSync(join(root, `${slug}.md`), 'utf8'))).toEqual(parseMarkdown(serializePageToMarkdown(page.page, page.tags)));
         const summary = String(result.details.summary_slug);
+        expect((await engine.readPageSnapshot(summary, { sourceId }))?.page.frontmatter.visibility).toBe('private');
         expect(readFileSync(join(root, `${summary}.md`), 'utf8')).toContain('Dream cycle 2026-09-20');
         const before = calls;
         await disposePersistenceConsumer(engine);
@@ -501,6 +505,19 @@ test('managed synthesis drives real children and publishes repaired provenance p
         expect(existsSync(join(root, `${dbOnly.details.summary_slug}.md`))).toBe(false);
         expect(calls).toBe(before);
         await engine.setConfig('dream.synthesize.summary_file_write', 'true');
+        const authority = (await maintenancePreflight(engine, sourceId))!;
+        const [output] = await engine.executeRaw<WriteRequest>(
+          "SELECT * FROM persistence_requests WHERE source_id=$1 AND operation='put_page' AND slug=$2 LIMIT 1", [sourceId, slug]);
+        await expect(authorizeMaintenanceOutput(engine, {
+          ...authority, writer: { ...authority.writer, remote: true },
+        }, output)).rejects.toMatchObject({ code: 'permission_denied' });
+        await expect(authorizeMaintenanceOutput(engine, authority, {
+          ...output, source_id: 'another-source',
+        })).rejects.toMatchObject({ code: 'permission_denied' });
+        await expect(authorizeMaintenanceOutput(engine, authority, {
+          ...output, authority: { ...output.authority,
+            principal: { kind: 'local_stdio', id: '00000000-0000-4000-a000-000000000000' } },
+        })).rejects.toMatchObject({ code: 'permission_denied' });
       });
     } finally { __setChatTransportForTests(null); }
   });

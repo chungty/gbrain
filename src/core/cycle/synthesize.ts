@@ -3067,6 +3067,9 @@ async function writeSummaryPage(
   }
 
   const body = lines.join('\n');
+  const privateOutputs = ['true', '1', 'yes', 'on'].includes(
+    (await engine.getConfig('dream.synthesize.private_outputs') ?? '').trim().toLowerCase(),
+  );
   // Stamp the dream-output identity marker into the summary's frontmatter.
   // parseMarkdown below round-trips it into the DB-stored frontmatter, so the
   // marker survives any later reverse-render of the summary page.
@@ -3074,6 +3077,7 @@ async function writeSummaryPage(
     {
       dream_generated: true,
       dream_cycle_date: summaryDate,
+      ...(privateOutputs ? { visibility: 'private', confidentiality: 'private' } : {}),
       // #4337: immutable mirror (reruns keep the first date via stampDreamProvenance); #6773: `created` is the
       // temporal key lint requires. The summary is per-date, so each key is simply the summary's own date.
       dream_created_cycle_date: summaryDate,

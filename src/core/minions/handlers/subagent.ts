@@ -39,6 +39,7 @@ import type { BrainEngine } from '../../engine.ts';
 import type { GBrainConfig } from '../../config.ts';
 import { loadConfig, isConfigTruthy } from '../../config.ts';
 import { buildBrainTools, selectAllowedTools } from '../tools/brain-allowlist.ts';
+import { privateDreamTools } from '../tools/private-dream.ts';
 import {
   acquireLease,
   releaseLease,
@@ -475,7 +476,10 @@ export function makeSubagentHandler(deps: SubagentDeps) {
       sourceId: data.source_id, readBudgetBytes: data.read_budget_bytes,
     });
     const selectedTools = selectAllowedTools(registry, data.allowed_tools);
-    const guardTools = (tools: ToolDef[], deferEmbeds = false) => guardDelegatedTools(engine, config, submitted, ctx.id, tools, deps.toolRegistry !== undefined, deferEmbeds);
+    const privateDream = !!data.oneshot_slug_suffix && isConfigTruthy(await engine.getConfig('dream.synthesize.private_outputs'));
+    const guardTools = (tools: ToolDef[], deferEmbeds = false) => privateDreamTools(
+      guardDelegatedTools(engine, config, submitted, ctx.id, tools, deps.toolRegistry !== undefined, deferEmbeds), privateDream,
+    );
     const toolDefs = guardTools(selectedTools);
 
     // v0.41 Approach C: render the final system prompt now that toolDefs
