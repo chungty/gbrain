@@ -2,7 +2,8 @@ import type { BrainEngine } from '../engine.ts';
 import { throwIfAborted } from '../abort-check.ts';
 import { serializePageToMarkdown } from '../markdown.ts';
 import { OperationError } from '../ops/contract.ts';
-import { authorizeStoredRequest } from '../persistence/authority.ts';
+import { authorizeStoredRequest, authorizeWrite } from '../persistence/authority.ts';
+import { authorizePageVisibility } from '../persistence/page-visibility.ts';
 import { digest } from '../persistence/digest.ts';
 import { getWriteRequest } from '../persistence/journal.ts';
 import type { WriteRequest } from '../persistence/model.ts';
@@ -13,6 +14,18 @@ import { emptyQuoteVerifyStats, normalizeForGrounding, repairDreamPageMarkdown, 
 
 interface OutputRef { slug: string; source_id: string; raw_source?: string; }
 interface RetainedOutput { job_id: number | bigint; job_key: string; request: WriteRequest; }
+
+export async function authorizeMaintenanceOutput(
+  engine: BrainEngine, authority: MaintenanceAuthority, request: WriteRequest,
+): Promise<void> {
+  if (authority.writer.remote || request.source_id !== authority.writer.sourceId
+      || request.source_incarnation !== authority.writer.sourceIncarnation) {
+    throw new OperationError('permission_denied', 'Private output review requires its local maintenance owner.');
+  }
+  await authorizeWrite(engine, request.authority, request.operation, request.slug);
+  await authorizeWrite(engine, authority.writer, 'submit_job', request.slug);
+  await authorizePageVisibility(engine, authority.writer, request.slug);
+}
 
 export async function postprocessManagedSynthesis(
   engine: BrainEngine,
@@ -59,7 +72,7 @@ export async function postprocessManagedSynthesis(
       if (prior.state === 'committed') { finalizedRefs.push(finalizedRef); continue; }
       if (['conflict', 'failed', 'cancelled'].includes(prior.state)) writeResponse(prior);
     }
-    await authorizeStoredRequest(engine, output.request);
+    await authorizeMaintenanceOutput(engine, authority, output.request);
     let content: string;
     if (prior) {
       if (prior.intent?.kind !== 'managed_maintenance_page' || prior.intent.expected_revision !== revision || typeof prior.intent.content !== 'string') {

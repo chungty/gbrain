@@ -1435,6 +1435,7 @@ export const KNOWN_CONFIG_KEYS: readonly string[] = [
   // default | 'agentic'), pre-retrieval link-candidate manifest (default on),
   // and inline-drain concurrency (default 1; clamped [1,8]; PGLite forced 1).
   'dream.synthesize.mode',
+  'dream.synthesize.private_outputs',
   'dream.synthesize.link_manifest',
   'dream.synthesize.quote_verify',
   'dream.synthesize.inline_concurrency',

@@ -1,5 +1,7 @@
 # Key files: Core Minions (1/2)
 
+- `src/core/minions/tools/private-dream.ts` — optional private-output wrapper for dream child page writes. `dream.synthesize.private_outputs` applies before one-shot and fallback tools publish. Ordinary tools remain unchanged; the cycle summary uses the same setting. Private receipt access still requires caller authorization. Tested by `test/minions/subagent-oneshot.test.ts`.
+
 [Subsystem index](../KEY_FILES.md). Read only the entries relevant to your change.
 Current behavior and load-bearing invariants; history belongs in Git and CHANGELOG.
 
